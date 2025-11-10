@@ -442,6 +442,39 @@ def get_recent_dois_from_semantic_scholar(query="quantum computing", num_article
             print(f"Error fetching DOIs from Semantic Scholar: {e}")
         return []
 
+def get_citing_dois_from_semantic_scholar(doi: str, limit: int = 20, offset: int = 0) -> list[str]:
+    """Fetch DOIs of works that cite the given DOI via Semantic Scholar Graph API.
+    Returns a list of DOIs (may contain None/empty filtered out).
+
+    Endpoint: /graph/v1/paper/DOI:{doi}/citations?fields=externalIds
+    """
+    try:
+        base = f"https://api.semanticscholar.org/graph/v1/paper/DOI:{requests.utils.quote(doi)}"
+        url = f"{base}/citations"
+        params = {
+            'fields': 'externalIds',
+            'limit': max(1, min(200, int(limit))),
+            'offset': max(0, int(offset)),
+        }
+        headers = DEFAULT_HEADERS
+        response = http_get(url, params=params, headers=headers, timeout=REQUEST_TIMEOUT)
+        response.raise_for_status()
+        data = response.json()
+        dois: list[str] = []
+        for item in data.get('data', []) or []:
+            citing = (item or {}).get('citingPaper') or {}
+            ext = citing.get('externalIds') or {}
+            d = ext.get('DOI')
+            if d:
+                dois.append(d)
+        if not production_mode:
+            print(f"Found {len(dois)} citing DOIs from Semantic Scholar for '{doi}': {dois}")
+        return dois
+    except Exception as e:
+        if not production_mode:
+            print(f"Error fetching citing DOIs from Semantic Scholar for {doi}: {e}")
+        return []
+
 def get_pdf_from_publisher(doi):
     """
     Tries to find the direct PDF download link from the publisher's website.
@@ -577,6 +610,26 @@ def get_pdf_from_unpaywall(doi: str, email: str | None) -> str | None:
         if not production_mode:
             print(f"Unpaywall lookup failed: {e}")
     return None
+
+def download_cited_papers_concurrent(target_doi: str, rows: int = 10, max_workers: int = 4):
+    """Download papers that cite the target DOI, concurrently, into folder 'cited'."""
+    target_doi = normalize_doi(target_doi)
+    citing = get_citing_dois_from_semantic_scholar(target_doi, limit=rows)
+    if not citing:
+        print(f"No citing DOIs found for: {target_doi}")
+        return
+    subdir = "cited"
+    if production_mode:
+        print(f"Scheduling {len(citing)} citing downloads -> folder '{subdir}' with {max_workers} workers")
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_map = {executor.submit(download_and_process_doi, d, subdir): d for d in citing}
+        for fut in as_completed(future_map):
+            d = future_map[fut]
+            try:
+                fut.result()
+            except Exception as e:
+                if not production_mode:
+                    print(f"Error downloading citing DOI {d}: {e}")
 
 def DownloadFileByUrl(DownloadUrl, FileTitle, subdirectory="main"):
     """
@@ -834,6 +887,8 @@ if __name__ == "__main__":
     parser.add_argument('--timeout', type=float, default=None, help='HTTP request timeout in seconds (override default).')
     parser.add_argument('--unpaywall-email', type=str, default=None, help='Optional email for Unpaywall API to find OA PDFs.')
     parser.add_argument('--scihub-domains', type=str, default=None, help='Comma-separated Sci-Hub base URLs to try in order.')
+    parser.add_argument('--cited', action='store_true', help='Also fetch and download articles that cite the given DOI(s).')
+    parser.add_argument('--cited-rows', type=int, default=10, help='Max number of citing articles to retrieve per DOI.')
     args = parser.parse_args()
 
     if args.prod:
@@ -862,6 +917,9 @@ if __name__ == "__main__":
             download_with_references_concurrent(d, depth=args.depth, max_workers=args.workers,
                                                 young_filter=args.young, young_depth=args.young_depth,
                                                 young_keywords=yk)
+            if args.cited:
+                print(f"\n--- Cited-by for target {i}: {d} ---")
+                download_cited_papers_concurrent(d, rows=args.cited_rows, max_workers=args.workers)
         print("\n--- All requested DOI tasks completed. ---")
     else:
         # Default behavior: Production mode + download one DOI with depth=2 and young-author filter at depth 2

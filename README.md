@@ -8,6 +8,7 @@
 - 引用提取：从页面 / CrossRef 元数据中提取引用 DOI，进行递归
 - 可选“年轻作者”筛选：在某一深度仅保留含有“学生/博士/研究生等”关键字的作者单位
 - 下载历史与去重：已下载的 DOI 会被缓存并跳过，历史记录写入 `.history.json`
+ - 被引（引用该论文的其他文章）抓取与下载：可通过 `--cited` + `--cited-rows` 启用（存放在 `cited/` 目录）
 
 > 仅供学术研究与学习使用。请遵守所在地区与资源平台的法律法规与使用条款。对因使用 Sci-Hub 等第三方服务产生的风险自行负责。
 
@@ -52,6 +53,8 @@ python .\main.py --prod --doi 10.1126/science.177.4047.393 --depth 1
 - `--young`：开启“年轻作者”筛选（配合 `--young-depth`）
 - `--young-depth`：在哪一层应用年轻作者筛选（默认 2）
 - `--young-keywords`：自定义筛选关键字，逗号分隔（默认内置中英文关键词）
+ - `--cited`：同时抓取引用（被引）该 DOI 的文章并下载（不再递归）
+ - `--cited-rows`：被引文章最大数量（默认 10）
 
 ### 示例
 
@@ -86,6 +89,11 @@ python .\main.py --prod --doi 10.1038/nphys1170 --rps 1.5 --timeout 20 --retries
 python .\main.py --prod --doi 10.1038/nphys1170 --depth 2 --young --young-depth 2 --young-keywords "phd,博士,研究生"
 ```
 
+- 抓取并下载被引文章（前 15 篇）：
+```powershell
+python .\main.py --prod --doi 10.1038/nphys1170 --cited --cited-rows 15
+```
+
 ---
 
 ## 工作原理（简述）
@@ -116,6 +124,7 @@ Downloads_pdf/
     main/                # 根 DOI 的 PDF
     ref1/                # 第一层引用 PDF
     ref2/                # 第二层引用 PDF
+    cited/               # 引用（被引）该 DOI 的其他文章 PDF（不递归）
 ```
 
 ---

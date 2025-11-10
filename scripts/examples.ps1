@@ -17,3 +17,6 @@ python .\main.py --prod --doi 10.1038/nphys1170 --rps 1.5 --timeout 20 --retries
 
 # 6) 在第 2 层应用“年轻作者”筛选
 python .\main.py --prod --doi 10.1038/nphys1170 --depth 2 --young --young-depth 2 --young-keywords "phd,博士,研究生"
+
+# 7) 下载被引文章（前 15 篇）
+python .\main.py --prod --doi 10.1038/nphys1170 --cited --cited-rows 15
